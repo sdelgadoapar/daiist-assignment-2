@@ -56,16 +56,90 @@ day: 29% of the line's volume. The review band has to fit inside that.
 
 ## Dataset
 
-*Workspace / project / version on Roboflow Universe, and the link. What one
-image represents, what the classes are, and why this dataset actually serves
-the problem above rather than merely resembling it.*
+> DRAFT: to be reviewed and adjusted.
+
+- **Roboflow Universe**: workspace `rishwanths-workspace`, project
+  `freshness-of-fruits`, **version 3**, image classification, CC BY 4.0.
+  https://universe.roboflow.com/rishwanths-workspace/freshness-of-fruits/dataset/3
+- Version 3 has no Roboflow preprocessing or augmentation, so the images are
+  the uploaded originals at their own sizes (1,451 distinct sizes, around
+  350–560 px).
+- **One image = one piece (or bunch) of fruit**, labelled with one of six
+  classes: `freshapples`, `freshbanana`, `freshoranges`, `rottenapples`,
+  `rottenbanana`, `rottenoranges`. The three `rotten*` classes are the
+  positive class: the pieces that must not ship.
+
+**Why it serves the problem.** It labels exactly the call a grader makes,
+fresh or rotten, for the three fruits a line would handle, and it keeps the
+fruit type. That lets us check whether the model fails more on one fruit than
+another, rather than only on average.
+
+**How it differs from the problem.** These are web and stock photos, not
+conveyor photos. Fresh fruit is mostly glossy studio shots on white, often
+with leaves or water droplets. Rotten fruit is mostly obviously rotten
+(mould, black bananas). Early bruises, the hard case on a real line, are rare.
+See "What the dataset's composition implies".
+
+**Other candidates rejected** (checked through the Roboflow API):
+
+| Dataset | Why not |
+|---|---|
+| `anil-ozkan2/meyve` v1 | 3,347 originals inflated to 8,033 by mosaic/crop augmentation |
+| `zahrabahadori/fresh-and-rotten-fruit` | Messy classes with only 31–77 images for some fruits |
+| `11thsacred/fruit-freshness-detection` | 96 images |
+| `project-ta/fruit-freshness-detection` | Object detection, not classification |
+| `university-of-mines-and-technology/fruits` | Unnamed classes `0` / `1` |
 
 ## What the dataset's composition implies
 
-*Instances per class, train/val/test sizes, typical object size relative to the
-image. Then the interpretation: which per-class numbers will be too thin to
-trust, whether the test split resembles the images you'd really see, and what
-you therefore can't conclude from your results.*
+> DRAFT: to be reviewed and adjusted. Numbers from `artifacts/dataset_stats.json`.
+
+**The published splits leak.** Most of the 8,195 images were already
+augmented by the dataset's original author: their filenames carry
+`rotated_by_75_`, `vertical_flip_`, `saltandpepper_`, `translation_`. Stripping
+those prefixes leaves only **1,513 distinct source photos**, about 5.4 images
+per photo. In the published split, **99.1% of validation and 99.4% of test
+images are a copy of a photo that is also in train.** A test score on that
+split would mostly measure whether the model remembers a photo it has seen
+rotated. So the pipeline re-splits the downloaded images **by source photo**:
+- per class, with a fixed seed;
+- every copy of a photo in the same split;
+- 70/15/15 by image count.
+
+The dataset is used as published (not forked or edited on Roboflow); only our
+local train/val/test assignment changes. Leakage on the split we use is 0%.
+
+| split | images | distinct photos | fresh apple | fresh banana | fresh orange | rotten apple | rotten banana | rotten orange | rotten share |
+|---|---|---|---|---|---|---|---|---|---|
+| train | 5,702 | ~1,049 | 851 | 808 | 763 | 1,266 | 1,160 | 854 | 57.5% |
+| val | 1,251 | 230 | 185 | 178 | 171 | 273 | 253 | 191 | 57.3% |
+| test | 1,242 | 234 | 185 | 174 | 165 | 275 | 254 | 189 | 57.8% |
+
+(Published split, not used: train 6,165 / valid 1,223 / test 807.)
+
+**What follows from it:**
+
+- **The real sample size is the number of photos, not images.** The test set
+  has 1,242 images but only 234 independent photos, about 39 per class. A
+  per-class recall measured on 39 photos has a 95% interval of roughly
+  ±10–15 points. Per-class differences smaller than that are noise.
+- **Classes are reasonably balanced** (763–1,266 training images per class),
+  so no class is too thin to train. Fresh oranges and fresh bananas are the
+  smallest classes.
+- **Rotten is 57% of the data but about 4% of a real line.** So accuracy on
+  this test set says little about cost on the line. Every cost is re-weighted
+  to the 4% base rate (see Cost matrix section). The threshold is then chosen
+  on validation and only reported on test.
+- **Object size**: this is classification. The fruit fills most of the frame
+  in nearly every image, so object size is not a concern. Framing would be
+  much the same on a conveyor camera.
+- **The test split does not look like production.** Studio "fresh" photos
+  versus amateur "rotten" photos invite a shortcut: the model may learn the
+  photo style instead of the rot. And the rotten examples are mostly far past
+  the borderline. So the test numbers below are an **upper bound** on what
+  the model would do on a real line. They cannot tell us how it handles a
+  small bruise under conveyor lighting, which is exactly the case that costs
+  money.
 
 ## Finetuning and baselines
 

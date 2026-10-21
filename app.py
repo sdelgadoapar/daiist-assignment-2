@@ -207,6 +207,17 @@ def dataset_table():
                           "rotten share": f"{v['rotten_share']:.1%}"} for k, v in STATS["splits"].items()])
 
 
+def leakage_note() -> str:
+    if not READY or "published_leakage" not in STATS:
+        return ""
+    pub, used = STATS["published_leakage"], STATS["leakage"]
+    return (f"**{pub['distinct_source_photos']:,} distinct source photos** behind "
+            f"{sum(v['images'] for v in STATS['published_splits'].values()):,} images. In the published split, "
+            f"{pub['val']['share']:.1%} of val and {pub['test']['share']:.1%} of test images are copies of a training "
+            f"photo, so train.py re-splits by source photo: leakage {used['val']['share']:.0%} / "
+            f"{used['test']['share']:.0%}. Test holds {used['test']['distinct_source_photos']} independent photos.")
+
+
 def build() -> gr.Blocks:
     with gr.Blocks(title="Fruit grading: operating point") as demo:
         gr.Markdown("# Fruit grading line\nEvery piece is shipped (pass), sent to a person at the grading "
@@ -262,6 +273,7 @@ def build() -> gr.Blocks:
                     probs = gr.Plot()
 
         with gr.Tab("Dataset"):
+            gr.Markdown(leakage_note())
             gr.Dataframe(dataset_table(), interactive=False)
 
         controls = [lo, hi, base_rate, cost_fn, split]
