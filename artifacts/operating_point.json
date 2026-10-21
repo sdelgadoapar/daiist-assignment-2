@@ -1,0 +1,113 @@
+{
+ "chosen_on": "val",
+ "reported_on": "test",
+ "base_rate": 0.04,
+ "single_threshold": 0.7,
+ "lo": 0.16,
+ "hi": 0.7,
+ "review_capacity_share": 0.2916666666666667,
+ "unconstrained_band": {
+  "lo": 0.16,
+  "hi": 0.7,
+  "review_share_val": 0.001909328820146365,
+  "val_cost_per_1000": 0.05281557049504021
+ },
+ "val_cost_per_1000": 0.05281557049504021,
+ "test_cost_per_1000": 2.6667324416849176,
+ "test_review_share": 0.020375512981351932,
+ "test_rates": {
+  "pos": {
+   "pass": 0.006963788300835654,
+   "review": 0.005571030640668524,
+   "fail": 0.9874651810584958
+  },
+  "neg": {
+   "pass": 0.9751908396946565,
+   "review": 0.02099236641221374,
+   "fail": 0.003816793893129771
+  }
+ },
+ "staffing": {
+  "cases_per_day": 1173.6295477258714,
+  "review_hours_per_day": 0.9780246231048928,
+  "reviewers_needed": 0.13971780330069897
+ },
+ "policies_per_1000_test": {
+  "do_nothing": 160.0,
+  "human_checks_all": 25.56000000000001,
+  "model_alone": 3.104807671862043,
+  "model_plus_review": 2.6667324416849176
+ },
+ "daily_volume": 57600,
+ "per_class_outcomes_test": {
+  "freshapples": {
+   "n": 185,
+   "pass": 0.9837837837837838,
+   "review": 0.016216216216216217,
+   "fail": 0.0
+  },
+  "freshbanana": {
+   "n": 174,
+   "pass": 1.0,
+   "review": 0.0,
+   "fail": 0.0
+  },
+  "freshoranges": {
+   "n": 165,
+   "pass": 0.9393939393939394,
+   "review": 0.048484848484848485,
+   "fail": 0.012121212121212121
+  },
+  "rottenapples": {
+   "n": 275,
+   "pass": 0.0,
+   "review": 0.0,
+   "fail": 1.0
+  },
+  "rottenbanana": {
+   "n": 254,
+   "pass": 0.003937007874015748,
+   "review": 0.003937007874015748,
+   "fail": 0.9921259842519685
+  },
+  "rottenoranges": {
+   "n": 189,
+   "pass": 0.021164021164021163,
+   "review": 0.015873015873015872,
+   "fail": 0.9629629629629629
+  }
+ },
+ "costs": {
+  "fn": 4.0,
+  "fp": 0.3,
+  "tp": 0.0,
+  "tn": 0.0,
+  "review": 0.015000000000000001,
+  "reviewer_sensitivity": 0.97,
+  "reviewer_specificity": 0.98
+ },
+ "policies_per_1000_test_95ci": {
+  "do_nothing": {
+   "low": 160.0,
+   "high": 160.0
+  },
+  "human_checks_all": {
+   "low": 25.56000000000001,
+   "high": 25.56000000000001
+  },
+  "model_alone": {
+   "low": 0.44072600301556536,
+   "high": 7.164375501485507
+  },
+  "model_plus_review": {
+   "low": 0.4247334702044351,
+   "high": 5.477285363391016
+  }
+ },
+ "test_errors": {
+  "misclassified_images": 17,
+  "misclassified_photos": 6,
+  "costly_images": 7,
+  "costly_photos": 4
+ }
+}

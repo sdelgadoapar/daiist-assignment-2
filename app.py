@@ -131,7 +131,7 @@ def decision_view(lo, hi, base_rate, cost_fn, split):
     curve.add_hline(y=cost, line_dash="dot", annotation_text="current band", annotation_position="bottom right")
     layout(curve, f"Cost against threshold ({split}, {base_rate:.1%} rotten, missed rotten €{cost_fn:.2f})", 380)
     curve.update_xaxes(title="threshold on P(rotten)")
-    curve.update_yaxes(title="EUR per 1,000")
+    curve.update_yaxes(title="EUR per 1,000 (log scale)", type="log")
 
     by_class = per_class_outcomes(TRUE[split], s, lo, hi, NAMES)
     table = pd.DataFrame([{"class": k, "rotten": NAMES_TO_ROTTEN[k], "images": v["n"],
@@ -173,6 +173,11 @@ def class_confusion_figure(model: str):
     fig.update_xaxes(title="predicted")
     fig.update_yaxes(title="true", autorange="reversed")
     return fig
+
+
+def error_frame():
+    path = config.ARTIFACTS_DIR / "errors_test.csv"
+    return pd.read_csv(path).drop(columns=["image"]) if path.exists() else pd.DataFrame()
 
 
 # --- Try an image -------------------------------------------------------------------
@@ -264,6 +269,9 @@ def build() -> gr.Blocks:
             which = gr.Radio(["finetuned", "coco_zero_shot", "majority_class"], value="finetuned", label="Model")
             confusion = gr.Plot(class_confusion_figure("finetuned"))
             which.change(class_confusion_figure, which, confusion)
+            gr.Markdown("### Where it fails: every test image misclassified, reviewed or decided wrongly "
+                        "at the pipeline's band (copies of one photo share the `photo` column)")
+            gr.Dataframe(error_frame(), interactive=False)
 
         with gr.Tab("Try an image"):
             with gr.Row():

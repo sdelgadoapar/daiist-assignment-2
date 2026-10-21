@@ -19,6 +19,9 @@ Start to finish, with no manual steps:
 Thresholds are chosen on validation and only reported on test, so the test
 number is not flattered by having been optimised on.
 
+Resume after a crash in the evaluation steps: A2_REUSE_TRAINING=1 keeps the
+weights and training.json the last full run wrote instead of training again.
+
 Smoke test without Roboflow: set A2_SMOKE_DATASET to a local folder laid out
 as <split>/<class>/<image>. It skips the download and trains for one epoch at
 a small size, to check the pipeline runs. Never commit what a smoke run writes.
@@ -217,6 +220,10 @@ def describe_dataset(root: Path, names: dict[int, str], roles: dict) -> dict:
 # --- 3. Finetune -------------------------------------------------------------
 
 def finetune(root: Path) -> tuple[Path, dict]:
+    reuse = config.ARTIFACTS_DIR / "training.json"
+    if os.environ.get("A2_REUSE_TRAINING") and config.WEIGHTS_PATH.exists() and reuse.exists():
+        print(f"A2_REUSE_TRAINING set: keeping {config.WEIGHTS_PATH} from the last run")
+        return config.WEIGHTS_PATH, json.loads(reuse.read_text())
     model = YOLO(config.BASE_MODEL)
     started = time.time()
     model.train(
@@ -257,6 +264,16 @@ def predict_records(model: YOLO, items: list[tuple[Path, int]], names: dict[int,
     return records
 
 
+def square_image(path: Path, size: int = 640) -> np.ndarray:
+    """Letterbox an image onto a grey size x size canvas, as BGR for Ultralytics."""
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((size, size))
+        canvas = Image.new("RGB", (size, size), (114, 114, 114))
+        canvas.paste(im, ((size - im.width) // 2, (size - im.height) // 2))
+    return np.asarray(canvas)[:, :, ::-1].copy()
+
+
 def coco_zero_shot(items: list[tuple[Path, int]], names: dict[int, str], roles: dict,
                    fallback: int) -> np.ndarray:
     """What the COCO detector can say unaided: which fruit it sees.
@@ -272,9 +289,11 @@ def coco_zero_shot(items: list[tuple[Path, int]], names: dict[int, str], roles: 
         if fruit not in fresh_of or not roles[name]["rotten"]:
             fresh_of[fruit] = cid
     preds = []
-    results = coco.predict(source=[str(p) for p, _ in items], classes=list(wanted), conf=0.05,
-                           stream=True, verbose=False)
-    for result in results:
+    for path, _ in items:
+        # One fixed input shape: with ~1,450 different image sizes the CPU
+        # backend otherwise caches kernels per shape until it runs out of RAM.
+        result = coco.predict(square_image(path), imgsz=640, classes=list(wanted), conf=0.05,
+                              verbose=False)[0]
         if len(result.boxes):
             top = int(result.boxes.cls[result.boxes.conf.argmax()])
             preds.append(fresh_of.get(wanted[top], fallback))
@@ -358,6 +377,43 @@ def sensitivity(y_val, s_val, y_test, s_test, costs: Costs) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def bootstrap_policies(records, rotten_ids, op, costs: Costs, rounds: int = 1000) -> dict:
+    """95% interval of each policy's test cost, resampling whole source photos.
+
+    Copies of one photo are not independent, so resampling images would
+    understate the uncertainty."""
+    y, s = labels_and_scores(records, rotten_ids)
+    photos: dict[str, list[int]] = {}
+    for i, record in enumerate(records):
+        photos.setdefault(f"{record['true']}/{source_photo(Path(record['image']))}", []).append(i)
+    groups = list(photos.values())
+    rng = np.random.default_rng(config.SEED)
+    samples = []
+    for _ in range(rounds):
+        idx = np.concatenate([groups[g] for g in rng.integers(0, len(groups), len(groups))])
+        samples.append(policy_costs(y[idx], s[idx], op["base_rate"], costs,
+                                    op["single_threshold"], op["lo"], op["hi"]))
+    return {k: {"low": 1000 * float(np.percentile([x[k] for x in samples], 2.5)),
+                "high": 1000 * float(np.percentile([x[k] for x in samples], 97.5))}
+            for k in samples[0]}
+
+
+def error_table(records, rotten_ids, names, op) -> pd.DataFrame:
+    """Every test image the model gets wrong, by class or by final decision."""
+    y, s = labels_and_scores(records, rotten_ids)
+    rows = []
+    for record, rotten, score in zip(records, y, s):
+        predicted = int(np.argmax(record["probs"]))
+        outcome = "fail" if score >= op["hi"] else "review" if score >= op["lo"] else "pass"
+        costly = (rotten and outcome == "pass") or (not rotten and outcome == "fail")
+        if predicted != record["true"] or costly or outcome == "review":
+            rows.append({"image": record["image"], "photo": source_photo(Path(record["image"])),
+                         "true": names[record["true"]], "predicted": names[predicted],
+                         "p_rotten": round(float(score), 4), "outcome": outcome,
+                         "costly_error": bool(costly)})
+    return pd.DataFrame(rows)
+
+
 # --- 6. Report ----------------------------------------------------------------
 
 def frame_to_markdown(frame: pd.DataFrame) -> str:
@@ -406,8 +462,16 @@ def markdown_summary(stats, classification, ultra, binary, op, sens, names) -> s
               f"{op['staffing']['review_hours_per_day']:.1f} h/day, "
               f"{op['staffing']['reviewers_needed']:.2f} graders",
               "", "| policy | EUR per 1,000 | EUR per day |", "|---|---|---|"]
+    ci = op["policies_per_1000_test_95ci"]
+    lines[-1] = "|---|---|---|---|"
+    lines[-2] = "| policy | EUR per 1,000 | 95% interval (photo bootstrap) | EUR per day |"
     for k, v in p.items():
-        lines.append(f"| {k} | {v:,.1f} | {v * op['daily_volume'] / 1000:,.0f} |")
+        lines.append(f"| {k} | {v:,.1f} | {ci[k]['low']:,.1f}–{ci[k]['high']:,.1f} | "
+                     f"{v * op['daily_volume'] / 1000:,.0f} |")
+    e = op["test_errors"]
+    lines += ["", f"Test errors: {e['misclassified_images']} misclassified images from "
+              f"{e['misclassified_photos']} photos; {e['costly_images']} costly decisions "
+              f"(rotten shipped or fresh binned) from {e['costly_photos']} photos. See errors_test.csv."]
     lines += ["", "## Sensitivity (thresholds re-chosen on val, cost on test)", "", frame_to_markdown(sens)]
     return "\n".join(lines) + "\n"
 
@@ -488,6 +552,16 @@ def main() -> None:
     op = choose_operating_point(y_val, s_val, y_test, s_test, costs, config.BASE_RATE)
     op["per_class_outcomes_test"] = per_class_outcomes(true_test, s_test, op["lo"], op["hi"], names)
     op["costs"] = costs.__dict__
+    op["policies_per_1000_test_95ci"] = bootstrap_policies(records["test"], rotten_ids, op, costs)
+    errors = error_table(records["test"], rotten_ids, names, op)
+    errors.to_csv(config.ARTIFACTS_DIR / "errors_test.csv", index=False)
+    op["test_errors"] = {
+        "misclassified_images": int((errors["true"] != errors["predicted"]).sum()) if len(errors) else 0,
+        "misclassified_photos": int(errors.loc[errors["true"] != errors["predicted"], "photo"].nunique())
+        if len(errors) else 0,
+        "costly_images": int(errors["costly_error"].sum()) if len(errors) else 0,
+        "costly_photos": int(errors.loc[errors["costly_error"], "photo"].nunique()) if len(errors) else 0,
+    }
     save_json("operating_point.json", op)
 
     sens = sensitivity(y_val, s_val, y_test, s_test, costs)
