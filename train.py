@@ -27,6 +27,7 @@ a small size, to check the pipeline runs. Never commit what a smoke run writes.
 import json
 import os
 import platform
+import re
 import shutil
 import time
 from collections import Counter
@@ -110,6 +111,64 @@ def ensure_test_split(root: Path, names: dict[int, str]) -> None:
             shutil.move(images[i], root / "test" / name / images[i].name)
             moved += 1
     print(f"No test split shipped: moved {moved} valid images to test, stratified by class.")
+
+
+def source_photo(path: Path) -> str:
+    """The photo an image was made from, with Roboflow's suffix and the
+    original dataset's augmentation prefixes stripped."""
+    stem = path.name.split(".rf.")[0]
+    return re.sub(config.AUGMENTATION_PREFIX, "", stem)
+
+
+def leakage(root: Path, names: dict[int, str]) -> dict:
+    """Share of val/test images whose source photo also appears in train."""
+    train_sources = {(names[c], source_photo(p)) for p, c in split_images(root, "train", names)}
+    out = {}
+    for split in ("val", "test"):
+        items = split_images(root, split, names)
+        shared = sum((names[c], source_photo(p)) in train_sources for p, c in items)
+        out[split] = {"images": len(items), "share_with_train": shared,
+                      "share": shared / len(items) if items else 0.0,
+                      "distinct_source_photos": len({(names[c], source_photo(p)) for p, c in items})}
+    all_sources = {(names[c], source_photo(p)) for s in SPLITS for p, c in split_images(root, s, names)}
+    out["distinct_source_photos"] = len(all_sources)
+    return out
+
+
+def regroup_by_source(root: Path, names: dict[int, str]) -> Path:
+    """Re-split every downloaded image so all copies of one photo share a
+    split. Per class, source photos are shuffled with a fixed seed and dealt
+    into train/valid/test until each split holds its share of the images.
+    Files are hard-linked, so this costs no disk space."""
+    out = root.parent / f"{root.name}-by-source"
+    if (out / ".done").exists():
+        return out
+    if out.exists():
+        shutil.rmtree(out)
+    rng = np.random.default_rng(config.SEED)
+    shares = config.GROUPED_SPLIT_SHARES
+    for cid, name in names.items():
+        groups: dict[str, list[Path]] = {}
+        for split in SPLITS:
+            for path, c in split_images(root, split, names):
+                if c == cid:
+                    groups.setdefault(source_photo(path), []).append(path)
+        keys = sorted(groups)
+        order = [keys[i] for i in rng.permutation(len(keys))]
+        total = sum(len(v) for v in groups.values())
+        targets = {"test": shares["test"] * total, "valid": shares["valid"] * total}
+        filled = {"test": 0, "valid": 0}
+        for key in order:
+            split = next((s for s in ("test", "valid") if filled[s] < targets[s]), "train")
+            if split != "train":
+                filled[split] += len(groups[key])
+            folder = out / split / name
+            folder.mkdir(parents=True, exist_ok=True)
+            for path in groups[key]:
+                os.link(path, folder / path.name)
+    (out / ".done").write_text("ok")
+    print(f"Re-split by source photo into {out}")
+    return out
 
 
 def class_roles(names: dict[int, str]) -> dict[str, dict]:
@@ -315,6 +374,11 @@ def markdown_summary(stats, classification, ultra, binary, op, sens, names) -> s
     lines.append(frame_to_markdown(pd.DataFrame(
         [{"split": k, "images": v["images"], **v["per_class"], "rotten share": f"{v['rotten_share']:.1%}"}
          for k, v in stats["splits"].items()])))
+    pl, gl = stats["published_leakage"], stats["leakage"]
+    lines += ["", f"Published splits (not used): {stats['published_splits']}",
+              f"Source photos: {pl['distinct_source_photos']}. Share of val/test images whose source photo is also "
+              f"in train: published {pl['val']['share']:.1%} / {pl['test']['share']:.1%}; "
+              f"split used {gl['val']['share']:.1%} / {gl['test']['share']:.1%}."]
     lines += ["", f"Image sizes (top): {stats['image_sizes']} ({stats['distinct_image_sizes']} distinct)", "",
               "## Classification, test split", ""]
     lines.append(frame_to_markdown(pd.DataFrame(
@@ -362,10 +426,17 @@ def main() -> None:
     print(f"Classes: {roles}")
 
     print("\n== Describing the dataset")
+    published = describe_dataset(root, names, roles)
+    published_leakage = leakage(root, names)
+    print(f"Published splits: {json.dumps(published_leakage)}")
+    if config.SPLIT_BY_SOURCE_PHOTO:
+        root = regroup_by_source(root, names)
     stats = describe_dataset(root, names, roles)
-    stats.update(names=names, source={"workspace": config.ROBOFLOW_WORKSPACE,
-                                      "project": config.ROBOFLOW_PROJECT,
-                                      "version": config.ROBOFLOW_VERSION})
+    stats.update(names=names, split_by_source_photo=config.SPLIT_BY_SOURCE_PHOTO,
+                 published_splits=published["splits"], published_leakage=published_leakage,
+                 leakage=leakage(root, names),
+                 source={"workspace": config.ROBOFLOW_WORKSPACE, "project": config.ROBOFLOW_PROJECT,
+                         "version": config.ROBOFLOW_VERSION})
     save_json("dataset_stats.json", stats)
     print(json.dumps(stats["splits"], indent=1))
 

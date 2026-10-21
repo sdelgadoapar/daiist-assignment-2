@@ -20,11 +20,19 @@ DATASET_DIR = ROOT / "datasets"     # gitignored: downloaded at train time
 RUNS_DIR = ROOT / "runs"            # gitignored: Ultralytics scratch output
 
 # --- Dataset (Roboflow Universe, used as published, not forked) -------------
-# TODO: confirm workspace / project / version on Universe before training.
-ROBOFLOW_WORKSPACE = "anil-ozkan2"
-ROBOFLOW_PROJECT = "meyve-cpypy"
-ROBOFLOW_VERSION = 1
+ROBOFLOW_WORKSPACE = "rishwanths-workspace"
+ROBOFLOW_PROJECT = "freshness-of-fruits"
+ROBOFLOW_VERSION = 3  # raw images, no preprocessing or augmentation
 ROBOFLOW_FORMAT = "folder"  # classification export: <split>/<class>/<image>
+
+# The published splits share source photos: most valid/test images are a
+# rotated, flipped or noised copy of a training photo. train.py therefore
+# re-splits the downloaded images by source photo (every copy of a photo in
+# one split), per class, with these shares. The Roboflow dataset is untouched.
+SPLIT_BY_SOURCE_PHOTO = True
+GROUPED_SPLIT_SHARES = {"train": 0.70, "valid": 0.15, "test": 0.15}
+# Filename prefixes the original dataset's own augmentation added.
+AUGMENTATION_PREFIX = r"^(rotated_by_-?\d+_|vertical_flip_|horizontal_flip_|translation_|saltandpepper_)+"
 
 # A class is "rotten" (the positive class: the one we must not ship) when its
 # name contains one of these words; the fruit is the name with the freshness
