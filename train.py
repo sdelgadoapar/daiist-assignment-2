@@ -168,7 +168,10 @@ def regroup_by_source(root: Path, names: dict[int, str]) -> Path:
             folder = out / split / name
             folder.mkdir(parents=True, exist_ok=True)
             for path in groups[key]:
-                os.link(path, folder / path.name)
+                target = folder / path.name
+                if target.exists():  # same file name in two published splits
+                    target = folder / f"{path.parent.parent.name}_{path.name}"
+                os.link(path, target)
     (out / ".done").write_text("ok")
     print(f"Re-split by source photo into {out}")
     return out
@@ -377,6 +380,33 @@ def sensitivity(y_val, s_val, y_test, s_test, costs: Costs) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def plot_cost_curve(sweep: pd.DataFrame, op: dict) -> None:
+    """Cost against threshold on val and test, with the chosen points marked."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    ax.plot(sweep["threshold"], sweep["val_cost_per_1000"], label="validation (thresholds chosen here)")
+    ax.plot(sweep["threshold"], sweep["test_cost_per_1000"], label="test (reported)")
+    t = op["single_threshold"]
+    at_t = sweep.loc[(sweep["threshold"] - t).abs().idxmin(), "test_cost_per_1000"]
+    ax.scatter([t], [at_t], marker="*", s=200, color="red", zorder=5, label=f"chosen model-alone threshold {t:.2f}")
+    ax.axvline(op["lo"], ls=":", color="grey", label=f"review band {op['lo']:.2f}–{op['hi']:.2f}")
+    ax.axvline(op["hi"], ls=":", color="grey")
+    ax.axhline(op["test_cost_per_1000"], ls="--", color="green",
+               label=f"model + review on test: €{op['test_cost_per_1000']:.1f}")
+    ax.set_yscale("log")
+    ax.set_xlabel("threshold on P(rotten)")
+    ax.set_ylabel(f"€ per 1,000 pieces at {op['base_rate']:.0%} rotten (log)")
+    ax.set_title("Expected cost against threshold, model deciding alone")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    (config.ARTIFACTS_DIR / "plots").mkdir(parents=True, exist_ok=True)
+    fig.savefig(config.ARTIFACTS_DIR / "plots" / "cost_vs_threshold.png", dpi=120)
+    plt.close(fig)
+
+
 def bootstrap_policies(records, rotten_ids, op, costs: Costs, rounds: int = 1000) -> dict:
     """95% interval of each policy's test cost, resampling whole source photos.
 
@@ -563,6 +593,7 @@ def main() -> None:
         "costly_photos": int(errors.loc[errors["costly_error"], "photo"].nunique()) if len(errors) else 0,
     }
     save_json("operating_point.json", op)
+    plot_cost_curve(sweep, op)
 
     sens = sensitivity(y_val, s_val, y_test, s_test, costs)
     sens.to_csv(config.ARTIFACTS_DIR / "sensitivity.csv", index=False)
