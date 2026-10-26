@@ -1,9 +1,9 @@
 # Assignment 2 Report
 
 - **Name**: Sebastián Delgado-Aparicio
-- **Student ID**:
+- **Student ID**: 20013
 - **Email**: sdelgadoapar.ieu2022@student.ie.edu
-- **Group**: [BBADBA 5A | BBADBA 5B | PPLEDBA 5A | BDBA 3A]
+- **Group**: BBADBA 5B
 
 ## Business problem, and the cost of being wrong
 
