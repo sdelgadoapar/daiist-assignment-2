@@ -468,25 +468,14 @@ review share.**
 
 ## Generative AI use disclosure
 
-I used Claude Code (Anthropic) as an assistant throughout this assignment,
-with my professor's permission for it to also draft the report text.
+I used Claude Code (Anthropic) as a coding assistant for this assignment. I worked through the problem with it step by step: I gave it instructions at each stage, and we discussed features, improvements and changes as the work went on.
 
-- **Code.** Claude Code wrote all of it: the training pipeline (`train.py`),
-  the shared metrics and cost logic (`evaluation.py`), the settings file
-  (`config.py`) and the Gradio dashboard (`app.py`). It also ran the training
-  and the self-check in its cloud environment.
-- **Dataset.** It compared the candidate datasets through the Roboflow API and
-  recommended the one I used. It also found the leakage between the published
-  splits and wrote the re-split by source photo.
-- **Costs and sources.** It proposed the cost figures, the base rate and the
-  staffing assumptions, and found the public sources cited above. After a
-  practice grading, it revised the grader accuracy and wage down to the
-  sourced values and added today's process and a stress test as comparisons.
-  I reviewed and accepted these as reasonable for a mid-size packing line.
-- **Report.** It drafted the text of this report from the pipeline's outputs.
-  I asked for it to be written in plain language, and reviewed it.
-- **My own decisions.** I chose the business problem (fruit grading, from the
-  options it laid out). I approved the dataset, the cost assumptions, the
-  thresholds the sweep selected, and the final recommendation. I take
-  responsibility for every number here, and I can explain each one without
-  the code in front of me.
+**Code:** Claude Code wrote the code from my step-by-step instructions: the training pipeline (train.py), the shared metrics and cost logic (evaluation.py), the settings file (config.py) and the Gradio dashboard (app.py). I set the goal for each piece and reviewed what it produced. Then I asked for changes, such as adding features, fixing problems I noticed in the results, and changing how parts of the pipeline worked. Most components went through several rounds of this before I was satisfied.
+
+**Discussion and iteration:** I used Claude Code to talk through design choices before implementing them. Examples include which metrics to track, how to structure the cost logic, and what the dashboard should show. It suggested options and pointed out trade-offs, and I made the final call on each.
+
+**Dataset:** I chose the dataset myself. Claude Code helped implement the loading and preprocessing once I had decided what I needed. During this work it found leakage between the dataset’s published splits, and at my request it wrote a re-split by source photo. Business problem. I framed the business problem (fruit grading) and defined what a useful solution would look like for a packing line.
+
+**Analysis and report:** I did the analysis and wrote all of the report text myself, including the cost assumptions, the interpretation of results and the final recommendation. Claude Code did not draft any of the written sections.
+
+**Responsibility:** I directed every stage of the project and approved every change to the code. 
