@@ -19,7 +19,7 @@ import plotly.graph_objects as go
 import config
 from evaluation import (
     OUTCOMES, Costs, band_rates, cost_per_case, labels_and_scores, outcome_counts,
-    per_class_outcomes, policy_costs, records_to_arrays, review_share, staffing,
+    per_class_outcomes, policy_costs, records_to_arrays, review_share, staffing, status_quo_from_config,
     sweep_single, thresholds,
 )
 
@@ -108,8 +108,10 @@ def decision_view(lo, hi, base_rate, cost_fn, split):
     )
 
     single_t = OPERATING["single_threshold"]
-    policies = {k: 1000 * v for k, v in policy_costs(y, s, base_rate, costs, single_t, lo, hi).items()}
-    labels = {"do_nothing": "Ship everything", "human_checks_all": "Person checks all",
+    policies = {k: 1000 * v for k, v in policy_costs(y, s, base_rate, costs, single_t, lo, hi,
+                                                     status_quo_from_config(config)).items()}
+    labels = {"status_quo": "Today: 2 graders glance", "do_nothing": "Ship everything",
+              "human_checks_all": f"Person checks all ({config.DAILY_VOLUME * config.REVIEW_SECONDS / 3600 / config.PRODUCTIVE_HOURS_PER_REVIEWER:.1f} graders)",
               "model_alone": f"Model alone (t={single_t:.2f})", "model_plus_review": "Model + review (sliders)"}
     bars = layout(go.Figure(go.Bar(x=[labels[k] for k in policies], y=list(policies.values()),
                                    text=[f"€{v:,.0f}" for v in policies.values()], textposition="outside")),
@@ -245,7 +247,8 @@ def build() -> gr.Blocks:
             base_rate = gr.Slider(0.005, 0.5, value=config.BASE_RATE, step=0.005,
                                   label="Base rate: share of incoming pieces really rotten")
             cost_fn = gr.Slider(0.25, 20, value=config.COST_FN, step=0.25, label="Cost of shipping a rotten piece (€)")
-            split = gr.Radio(["test", "val"], value="test", label="Evaluation split")
+            split = gr.Radio(["test", "val"], value="test",
+                             label="Evaluation split (thresholds were chosen on val; test is the reported number)")
 
         with gr.Tab("Operating point"):
             kpis = gr.Markdown()

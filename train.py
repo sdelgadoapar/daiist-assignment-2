@@ -45,7 +45,7 @@ import config
 from evaluation import (
     Costs, band_rates, classification_metrics, cost_per_case, labels_and_scores,
     optimise_band, per_class_outcomes, policy_costs, records_to_arrays,
-    review_share, roc_auc, staffing, sweep_single, thresholds,
+    review_share, roc_auc, staffing, status_quo_from_config, sweep_single, thresholds,
 )
 
 SMOKE_DATASET = os.environ.get("A2_SMOKE_DATASET")
@@ -358,7 +358,7 @@ def choose_operating_point(y_val, s_val, y_test, s_test, costs: Costs, base_rate
         "staffing": staffing(share, config.DAILY_VOLUME, config.REVIEW_SECONDS,
                              config.PRODUCTIVE_HOURS_PER_REVIEWER),
         "policies_per_1000_test": {k: 1000 * v for k, v in policy_costs(
-            y_test, s_test, base_rate, costs, single_t, band["lo"], band["hi"]).items()},
+            y_test, s_test, base_rate, costs, single_t, band["lo"], band["hi"], status_quo_from_config(config)).items()},
         "daily_volume": config.DAILY_VOLUME,
     }
 
@@ -373,7 +373,8 @@ def sensitivity(y_val, s_val, y_test, s_test, costs: Costs) -> pd.DataFrame:
             sweep = sweep_single(y_val, s_val, base_rate, c, grid)
             t = min(sweep, key=lambda row: row["cost_per_1000"])["threshold"]
             band = optimise_band(y_val, s_val, base_rate, c, grid, review_capacity_share())
-            policies = policy_costs(y_test, s_test, base_rate, c, t, band["lo"], band["hi"])
+            policies = policy_costs(y_test, s_test, base_rate, c, t, band["lo"], band["hi"],
+                                    status_quo_from_config(config))
             rows.append({"cost_fn": fn, "base_rate": base_rate, "single_threshold": t,
                          "lo": band["lo"], "hi": band["hi"],
                          **{f"{k}_per_1000": 1000 * v for k, v in policies.items()}})
@@ -422,10 +423,33 @@ def bootstrap_policies(records, rotten_ids, op, costs: Costs, rounds: int = 1000
     for _ in range(rounds):
         idx = np.concatenate([groups[g] for g in rng.integers(0, len(groups), len(groups))])
         samples.append(policy_costs(y[idx], s[idx], op["base_rate"], costs,
-                                    op["single_threshold"], op["lo"], op["hi"]))
+                                    op["single_threshold"], op["lo"], op["hi"],
+                                    status_quo_from_config(config)))
     return {k: {"low": 1000 * float(np.percentile([x[k] for x in samples], 2.5)),
                 "high": 1000 * float(np.percentile([x[k] for x in samples], 97.5))}
             for k in samples[0]}
+
+
+def stress_test(y, s, op, costs: Costs) -> list[dict]:
+    """What if the model is less sure on real line fruit than on this data?
+
+    Each rotten score is pulled towards 0.5 by shrinking its log-odds by a
+    factor, keeping the thresholds fixed. Factor 1 is the model as measured."""
+    logit = np.log(np.clip(s, 1e-6, 1 - 1e-6) / np.clip(1 - s, 1e-6, 1))
+    rows = []
+    for factor in (1.0, 0.75, 0.5, 0.35, 0.25):
+        shrunk = 1 / (1 + np.exp(-logit * factor))
+        alone = band_rates(y, shrunk, op["single_threshold"], op["single_threshold"])
+        band = band_rates(y, shrunk, op["lo"], op["hi"])
+        rows.append({
+            "logit_factor": factor,
+            "model_alone_per_1000": 1000 * cost_per_case(alone, op["base_rate"], costs),
+            "model_plus_review_per_1000": 1000 * cost_per_case(band, op["base_rate"], costs),
+            "model_alone_rotten_shipped": alone["pos"]["pass"],
+            "band_rotten_shipped": band["pos"]["pass"] + band["pos"]["review"] * (1 - costs.reviewer_sensitivity),
+            "band_review_share": review_share(band, op["base_rate"]),
+        })
+    return rows
 
 
 def error_table(records, rotten_ids, names, op) -> pd.DataFrame:
@@ -468,7 +492,8 @@ def markdown_summary(stats, classification, ultra, binary, op, sens, names) -> s
     lines += ["", f"Image sizes (top): {stats['image_sizes']} ({stats['distinct_image_sizes']} distinct)", "",
               "## Classification, test split", ""]
     lines.append(frame_to_markdown(pd.DataFrame(
-        [{"model": m, "accuracy": v["accuracy"], **{f"macro {k}": x for k, x in v["macro"].items()}}
+        [{"model": m, "accuracy": v["accuracy"], "fruit-type accuracy": v.get("fruit_type_accuracy", 0.0),
+          **{f"macro {k}": x for k, x in v["macro"].items()}}
          for m, v in classification.items()])))
     lines += ["", f"Ultralytics' own test top-1 for the finetuned model: {ultra['top1']:.3f}"]
     for model, m in classification.items():
@@ -502,6 +527,8 @@ def markdown_summary(stats, classification, ultra, binary, op, sens, names) -> s
     lines += ["", f"Test errors: {e['misclassified_images']} misclassified images from "
               f"{e['misclassified_photos']} photos; {e['costly_images']} costly decisions "
               f"(rotten shipped or fresh binned) from {e['costly_photos']} photos. See errors_test.csv."]
+    lines += ["", "## Stress test: model less sure than measured (thresholds fixed)", "",
+              frame_to_markdown(pd.DataFrame(op["stress_test"]))]
     lines += ["", "## Sensitivity (thresholds re-chosen on val, cost on test)", "", frame_to_markdown(sens)]
     return "\n".join(lines) + "\n"
 
@@ -560,10 +587,17 @@ def main() -> None:
     y_test, s_test = labels_and_scores(records["test"], rotten_ids)
     binary = {
         "finetuned": binary_summary(y_test, s_test),
-        # neither baseline produces a rotten probability; their call is a constant
-        "coco_zero_shot": binary_summary(y_test, np.isin(coco_pred, rotten_ids).astype(float)),
+        # Neither baseline has any notion of rot, so their rotten score is a
+        # constant. (COCO's class label for unrecognised fruit falls back to the
+        # majority class, which happens to be rotten; that is not a rot signal.)
+        "coco_zero_shot": binary_summary(y_test, np.zeros(len(y_test))),
         "majority_class": binary_summary(y_test, np.full(len(y_test), float(majority in rotten_ids))),
     }
+    fruit_of = np.array([roles[names[c]]["fruit"] for c in range(len(names))])
+    probs_pred = probs_test.argmax(1)
+    for model, pred in (("finetuned", probs_pred), ("coco_zero_shot", coco_pred),
+                        ("majority_class", majority_pred)):
+        classification[model]["fruit_type_accuracy"] = float((fruit_of[pred] == fruit_of[true_test]).mean())
     save_json("metrics.json", {"classification_test": classification, "ultralytics_test": ultra,
                                "binary_test": binary, "names": names, "rotten_ids": rotten_ids,
                                "majority_class": names[majority]})
@@ -583,6 +617,8 @@ def main() -> None:
     op["per_class_outcomes_test"] = per_class_outcomes(true_test, s_test, op["lo"], op["hi"], names)
     op["costs"] = costs.__dict__
     op["policies_per_1000_test_95ci"] = bootstrap_policies(records["test"], rotten_ids, op, costs)
+    op["stress_test"] = stress_test(y_test, s_test, op, costs)
+    op["status_quo"] = status_quo_from_config(config)
     errors = error_table(records["test"], rotten_ids, names, op)
     errors.to_csv(config.ARTIFACTS_DIR / "errors_test.csv", index=False)
     op["test_errors"] = {

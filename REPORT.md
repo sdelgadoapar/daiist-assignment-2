@@ -9,29 +9,40 @@
 
 I picked a decision that people make by eye thousands of times a day: on a
 fruit packing line, is this piece of fruit good enough to ship, or does it go
-in the bin? Today a line grader makes that call while the fruit rolls past. I
-want a camera over the conveyor, and a model that gives every piece a
-probability of being rotten. That probability sends the piece to one of three
-places:
+in the bin?
+
+**How it works today.** Two graders stand at the conveyor and pull off
+anything that looks bad as the fruit rolls past. At 2 pieces a second, each
+of them sees roughly one piece per second: a glance, not an inspection. Human
+visual inspection catches about 80% of defects on average; even careful,
+trained inspectors in a Sandia study only reached 85%
+([See et al., Sandia/OSTI](https://www.osti.gov/biblio/1236203)). So I assume
+today's graders catch **80%** of rotten pieces and wrongly pull off 3% of good
+ones.
+
+**What I propose.** A camera over the conveyor, and a model that gives every
+piece a probability of being rotten. That probability sends the piece to one
+of three places:
 
 - **pass**: it goes into a retail pack and ships;
 - **review**: it is pushed into a tray at the grading table, where a grader
   picks it up, turns it over and decides;
 - **fail**: it is knocked off into the waste or juice bin.
 
-The line supervisor sets the two thresholds, and the graders handle whatever
-lands in review.
+The line supervisor sets the two thresholds. The graders stop glancing at
+everything and instead look carefully at the few pieces the model is unsure
+about.
 
 The two mistakes are very different in price, which is what makes this
 problem interesting:
 
 | outcome | cost per piece | where the number comes from |
 |---|---|---|
-| Rotten piece shipped (false negative) | **€4.00** | The rot is found in a supermarket pack. The retailer refunds or writes off the whole pack (a 1 kg pack sells for about €2–3), the mould has often spread to the pieces next to it, and the retailer charges the packer for handling the quality claim. €4 sits in the middle of that range. |
-| Fresh piece binned (false positive) | **€0.30** | We threw away a piece we could have sold. Wholesale fruit is about €1.20–1.80 per kg, at five or six pieces per kg. Nothing else happens. |
+| Rotten piece shipped (false negative) | **€4.00** | The rot is found in a supermarket pack and the packer pays twice. First, the 1 kg pack is written off: about €1.75 at Spanish wholesale prices ([Tridge](https://www.tridge.com/market-overview/fresh-apple/ES); it retails at about €2.76/kg, [Expatistan](https://expatistan.com/price/apples/madrid)). Second, some shoppers complain, and UK supermarkets charge suppliers £45–55 per consumer complaint ([Fruitnet, on the Groceries Code Adjudicator](https://www.fruitnet.com/fpj/article/165630/tacon-to-close-one-of-her-top-five-retail-supplier-issues)). With a 5% chance of a complaint at about €50, that adds €2.50. €1.75 + €2.50 ≈ €4.25, which I round to €4. |
+| Fresh piece binned (false positive) | **€0.30** | We threw away a piece we could have sold: about €1.75 per kg wholesale at roughly six pieces per kg. Cheaper varieties trade at €0.70–1.00/kg ([Wikifarmer](https://wikifarmer.com/library/en/article/fresh-market-digest-week-50)), so €0.30 is at the high end. That is deliberate: it makes false alarms look more expensive, which works against the model, not for it. |
 | Rotten piece binned (true positive) | €0 | It was worth nothing before the camera saw it. Binning it is the right, free outcome. |
 | Fresh piece shipped (true negative) | €0 | Business as usual. |
-| One human review | €0.015 | 3 seconds of a grader's time at a fully loaded €18 an hour. I assume graders catch 97% of rotten pieces and wrongly bin 2% of fresh ones; they are good, not perfect. |
+| One careful review | €0.012 | 3 seconds of a grader at about €14 an hour fully loaded. Packing-house wages in Spain are tied to the minimum wage ([CSIF Granada](https://www.csif.es/es/noticia/portada/granada/articulo/81210)): €1,184 a month in 14 payments in 2025, roughly €9.30 an hour. Employer social security of about 31% and a little overhead take that to €14. I assume a grader holding one flagged piece catches **90%** of rot, a bit better than Sandia's 85% because one fruit in the hand is an easier call than a complex part, and wrongly bins 5% of good pieces. |
 
 So shipping one rotten piece costs about **13 times** as much as binning a good
 one. That ratio drives everything that follows:
@@ -44,11 +55,13 @@ one. That ratio drives everything that follows:
 - **It sets how to choose the threshold.** I sweep cost, rather than picking the
   threshold that looks best on accuracy.
 
-For the volume, I assume one line at 2 pieces per second over an 8-hour shift:
-**57,600 pieces a day**. I assume **4%** of incoming fruit is actually rotten.
-Two graders work the shift with about 7 productive hours each, so the line can
-review at most 16,800 pieces a day, 29% of its volume. Whatever I send to
-review has to fit inside that.
+**Volume and base rate.** I assume one line at 2 pieces per second over an
+8-hour shift: **57,600 pieces a day**, and that **4%** of incoming fruit is
+actually rotten. The two graders have about 7 productive hours each, so a
+careful 3-second look fits at most 16,800 pieces a day, 29% of the line's
+volume. Checking *every* piece that carefully would take 48 hours of work a
+day, or 6.9 graders. That is why it doesn't happen today, and why careful
+checks have to be targeted.
 
 ## Dataset
 
@@ -82,8 +95,8 @@ of only looking at an average.
 conveyor photos. Fresh fruit is mostly glossy studio shots on white, often with
 a leaf or water droplets. Rotten fruit is mostly very obviously rotten: thick
 mould, black bananas. The hard case on a real line, an early bruise, barely
-appears. I come back to this in every section below, because it limits what
-the numbers can tell us.
+appears. None of the public candidates had conveyor images, so I chose the
+cleanest one and treat its results as a best case throughout.
 
 ## What the dataset's composition implies
 
@@ -162,11 +175,11 @@ ImageNet checkpoint:
 
 Results on the same test split (1,242 images, 234 independent photos):
 
-| model | accuracy | macro precision | macro recall | macro F1 | rotten-vs-fresh ROC AUC |
-|---|---|---|---|---|---|
-| **finetuned yolo11n-cls** | **0.986** | **0.985** | **0.985** | **0.985** | **0.999** |
-| COCO `yolo11n`, zero-shot | 0.473 | 0.323 | 0.519 | 0.391 | 0.647 |
-| majority class (`rottenapples`) | 0.221 | 0.037 | 0.167 | 0.060 | 0.500 |
+| model | accuracy (6 classes) | right fruit type | macro precision | macro recall | macro F1 | rotten-vs-fresh ROC AUC |
+|---|---|---|---|---|---|---|
+| **finetuned yolo11n-cls** | **0.986** | **0.994** | **0.985** | **0.985** | **0.985** | **0.999** |
+| COCO `yolo11n`, zero-shot | 0.473 | 0.783 | 0.323 | 0.519 | 0.391 | 0.500 |
+| majority class (`rottenapples`) | 0.221 | 0.370 | 0.037 | 0.167 | 0.060 | 0.500 |
 
 Ultralytics' own validator gives the same 0.986 on the test split, so my
 evaluation code and theirs agree.
@@ -174,15 +187,17 @@ evaluation code and theirs agree.
 **How I built the baselines.**
 
 - **COCO zero-shot.** The pretrained COCO detector knows *apple*, *banana* and
-  *orange*, but has no idea what rot is. I map its most confident fruit
-  detection to the *fresh* class of that fruit; if it finds no fruit, I fall
-  back to the majority class.
-  - It is good at naming fresh fruit: 82–97% recall on the fresh classes.
-  - It never calls a banana or an orange rotten.
-  - Its AUC of 0.65 comes entirely from rotten fruit often being too far gone
-    to be recognised as fruit at all, which triggers the fallback.
-  - The lesson: telling *which fruit* it is comes almost for free. Telling
-    *fresh from rotten* is what the finetuning adds.
+  *orange*, but has no idea what rot is.
+  - Its most confident fruit detection becomes the *fresh* class of that
+    fruit. If it sees no fruit at all, it gets the majority class, just so
+    every image has a label.
+  - **What it does well:** it names the fruit correctly 78% of the time.
+  - **What it cannot do:** rot is invisible to it, so its rotten score is the
+    same for every image and its rotten-vs-fresh AUC is exactly 0.5.
+  - As a business decision, COCO zero-shot is no better than shipping
+    everything.
+  - So knowing *which fruit* it is comes almost for free. Telling *fresh from
+    rotten* is entirely what the finetuning adds.
 - **Majority class.** It calls everything a rotten apple. As a business
   decision, that means binning every piece on the line.
 
@@ -256,8 +271,8 @@ The costs per piece, from the business section:
 
 | actual \ decision | ship (pass) | grading table (review) | bin (fail) |
 |---|---|---|---|
-| rotten | **€4.00** (FN) | €0.015 + 3% × €4.00 (grader misses it) | €0 (TP) |
-| fresh | €0 (TN) | €0.015 + 2% × €0.30 (grader bins it) | **€0.30** (FP) |
+| rotten | **€4.00** (FN) | €0.012 + 10% × €4.00 (grader misses it) | €0 (TP) |
+| fresh | €0 (TN) | €0.012 + 5% × €0.30 (grader bins it) | **€0.30** (FP) |
 
 **Base rate: 4% of incoming pieces are rotten.** The test split is 57.8%
 rotten, so reading costs straight off the test counts would make catching rot
@@ -278,20 +293,21 @@ The same curve is live in the dashboard, where you can move the base rate and
 the cost of a missed rotten piece and watch it change. The sweep data is in
 `artifacts/cost_sweep.csv`.
 
-**Theory agrees with the sweep.** The break-even chance of being rotten is
-7%. The model was trained on 57.5% rotten images, not 4%, so its scores
-are shifted. Correcting the 7% for that difference in odds puts the cut on
-the model's score at 0.71. The sweep landed at 0.70.
-
-**Reading the curve honestly.**
-- **The middle is flat.** Every threshold between about 0.16 and 0.95 costs
-  between €2 and €8 per 1,000 pieces on test.
-- **The edges explode.** Below 0.05 the model bins most of the fresh fruit;
-  at 1.0 a quarter of the rotten fruit ships.
-- **Inside the flat stretch, one or two photos decide where the exact minimum
-  falls.** That is why validation says 0.70 and test would say 0.95. The fair
-  claim is "anything from about 0.2 to 0.9 costs roughly the same on this
-  data", not "0.70 is the optimum".
+**The curve is flat in the middle, so I need a tie-breaker, and theory gives
+one.**
+- **The shape.** Every threshold between about 0.16 and 0.95 costs between €2
+  and €8 per 1,000 pieces on test. Below 0.05 the model bins most of the
+  fresh fruit; at 1.0 a quarter of the rotten fruit ships.
+- **Why it's flat.** The model makes so few mistakes on this data that one or
+  two photos decide exactly where the minimum falls. That is why validation
+  says 0.70 and test would say 0.95. The data alone cannot pin the threshold
+  down.
+- **The tie-breaker.** The break-even chance of being rotten is 7%. The model
+  was trained on 57.5% rotten images, while the line sees 4%. Shifting the 7%
+  by that difference in odds puts the cut on the model's score at 0.71.
+- **The decision.** I keep **0.70** because two independent methods agree on
+  it: the validation sweep and the theory. The theory doesn't depend on which
+  handful of photos happened to land in validation.
 
 At 0.70, with the model deciding alone, the test split gives:
 - 98.7% of rotten pieces binned and 0.4% of fresh pieces wrongly binned;
@@ -300,31 +316,32 @@ At 0.70, with the model deciding alone, the test split gives:
   €0.4–7.2.
 
 **How the answer changes with my assumptions.** I re-ran the whole choice
-(thresholds re-picked on validation, cost measured on test) across shipped-
-rotten costs from €0.50 to €20 and base rates from 1% to 15%. The full table
-is in `artifacts/sensitivity.csv`.
+(thresholds re-picked on validation, cost measured on test) for 45 scenarios:
+shipped-rotten costs from €0.50 to €20 and base rates from 1% to 15%. The full
+table is in `artifacts/sensitivity.csv`.
 
-- **The threshold depends on the euro figures.** It stays at 0.70 as long as
-  a shipped rotten piece costs less than about €6 at a 4% base rate. Above
-  that, or if the rotten share climbs to 8% with a €3–4 penalty, the cheapest
-  threshold drops to 0.16: the model should bin more aggressively.
-- **The review band is worth it only above a certain penalty.** At a 4% base
-  rate it pays for itself once a shipped rotten piece costs more than about
-  €2. Below that, the model alone is cheaper, because the reviews cost more
-  than the few mistakes they catch.
-- **The model beats people in every scenario.** Whatever the costs and base
-  rate in that grid, the model (alone or with review) costs less than a third
-  of having a person check every piece, and a tiny fraction of shipping
-  everything.
+- **The threshold moves when rot becomes more expensive or more common.** At a
+  4% base rate it stays at 0.70 until a shipped rotten piece costs about €6.
+  If 8% of the fruit is rotten, it moves once the penalty passes €3; at 15%,
+  once it passes €2. Past those points the cheapest threshold drops to 0.16:
+  the model should bin more aggressively.
+- **The review band pays off once rot is expensive enough.** At a 4% base
+  rate it beats the model alone once a shipped rotten piece costs more than
+  about €3. At a 2% base rate it needs about €6, and at 1% about €12. Below
+  those points, the reviews cost more than the few mistakes they catch.
+  Wherever the threshold drops to 0.16, the band saves €4–6 per 1,000 pieces.
+- **The model beats both human options in every scenario.** In all 45, the
+  model (alone or with review) costs at most a fifth of today's process, and
+  at most a fifth of having graders check every piece carefully.
 
 **The assumption that would change my answer most is not a euro figure. It is
 how often the model misses rot on real conveyor fruit.**
-- The model beats a person checking every piece (€25.6 per 1,000) as long as,
-  roughly, 160 × miss rate + 288 × false-alarm rate stays below 25.6.
+- Today's process costs €44.5 per 1,000 pieces. The model beats it as long as,
+  roughly, 160 × miss rate + 288 × false-alarm rate stays below 44.5.
 - With false alarms around 0.4%, that means it can afford to miss up to about
-  **15% of rotten pieces** in production.
-- On this test it misses 0.7% (with review) to 1.3% (alone). That is a large
-  margin, but this test set contains very little of the borderline rot that a
+  **a quarter of rotten pieces** in production.
+- On this test it misses 0.8% (with review) to 1.3% (alone). The margin is
+  large, but this test set contains very little of the borderline rot that a
   real line sees.
 
 ## What a person still has to check
@@ -344,7 +361,8 @@ On the test split, re-weighted to 4% rotten:
 - **2.0% of pieces go to the grading table.** They are mostly fresh oranges
   and fresh apples the model is unsure about, plus a handful of rotten
   oranges.
-- 0.7% of rotten pieces still ship; 0.4% of fresh pieces are binned.
+- 0.8% of rotten pieces still ship (some slip past the model, a few past the
+  grader), and 0.5% of fresh pieces are binned.
 
 **The review load:** 2.0% × 57,600 = **1,174 pieces a day**. At 3 seconds each
 that is **59 minutes a day**, or **0.14** of one grader's 7 productive hours.
@@ -353,34 +371,60 @@ that is **59 minutes a day**, or **0.14** of one grader's 7 productive hours.
 - **The work fits the line.** Diverted pieces collect in a tray, and one
   grader can empty it a few times per shift; fruit does not go off in
   minutes.
-- **There is plenty of headroom.** The two graders already on shift have 14
-  hours of capacity between them, so the review band could grow about
-  **12-fold** before staffing becomes a problem.
-- **That headroom will be needed.** On real conveyor images the band will
-  grow, because borderline fruit is far more common there than in this
-  dataset.
+- **The graders' time is freed up.** The two graders who glance at the belt
+  today would spend one hour a day between them on careful reviews, instead of
+  16 hours on glancing. The rest of their time can go to other line work.
+- **There is plenty of headroom.** The band could grow about **12-fold**
+  before the two graders run out of time.
 
 **Priced against the alternatives** (test split, 4% rotten, 57,600 pieces a day;
 95% ranges from the photo-level bootstrap):
 
-| policy | € per 1,000 pieces | € per day | graders needed | what still goes wrong |
+| policy | € per 1,000 pieces | € per day | grader time needed | what still goes wrong |
 |---|---|---|---|---|
-| Do nothing (ship everything) | 160.0 | 9,216 | 0 | every rotten piece ships |
-| A person checks every piece | 25.6 | 1,472 | **6.9** (48 h of checking a day) | 3% of rotten still ships; needs about 5 more graders than the line has |
-| Model alone (threshold 0.70) | 3.1 (0.4–7.2) | 179 | 0 | 1.3% of rotten ships and nobody looks at it |
-| **Model + review (0.16 / 0.70)** | **2.7 (0.4–5.5)** | **154** | **0.14** | 0.7% of rotten ships |
+| Do nothing (ship everything) | 160.0 | 9,216 | none | every rotten piece ships |
+| **Today:** 2 graders glance at the belt | 44.5 | 2,565 | 16 h (2 graders) | 20% of rotten ships, 3% of good fruit binned |
+| Graders check every piece carefully | 42.1 | 2,423 | 48 h (6.9 graders, only 2 exist) | 10% of rotten ships; not feasible with this staff |
+| Model alone (threshold 0.70) | 3.1 (0.4–7.2) | 179 | none | 1.3% of rotten ships and nobody looks at it |
+| **Model + review (0.16 / 0.70)** | **2.8 (0.5–5.8)** | **164** | **1 h** | 0.8% of rotten ships |
 
-**My recommendation is to run the model with the review band.**
-- **It is the cheapest policy, though not by a margin I can prove.** Its edge
-  over the model alone, about €25 a day, sits inside the uncertainty: the two
-  ranges overlap.
-- **The real reason I keep the band is risk.** It costs about one
-  grader-hour a day. It keeps a person looking at exactly the cases the model
-  is unsure of. And it gives the line a cheap buffer for the worse
-  performance I expect on real conveyor images.
-- **Either model policy beats both alternatives by far.** Each costs about a
-  tenth of checking every piece by hand, an option the line could not even
-  staff with two graders, and about 2% of shipping everything unchecked.
+Against today's process, the model with review saves about **€2,400 a day**. The
+table leaves out the camera, lighting and a PC. Even if they cost €20,000 to
+install, which is my rough guess, not a quote, the saving would pay for them
+within about two weeks of operation.
+
+**Model alone or model + review?** At my assumed costs the band is cheaper,
+but only by about €15 a day, well inside the uncertainty. So I also checked
+what happens if the model is **less sure of itself on real fruit** than on
+this test set. I simulated that by pulling every rotten score towards 0.5
+(shrinking its log-odds by a factor), with the thresholds unchanged:
+
+| how much less sure | model alone (€/1,000) | model + review (€/1,000) | rotten shipped, alone | rotten shipped, with review | share sent to review |
+|---|---|---|---|---|---|
+| as measured | 3.1 | 2.8 | 1.3% | 0.8% | 2.0% |
+| a little (×0.75) | 3.1 | 2.5 | 1.3% | 0.5% | 2.2% |
+| clearly (×0.5) | 3.3 | 2.9 | 1.4% | 0.4% | 4.4% |
+| a lot (×0.35) | 3.3 | 3.6 | 1.4% | 0.4% | 7.0% |
+| very much (×0.25) | 2.7 | 3.9 | 1.7% | 0.3% | 13.1% |
+
+This changed how I read my own recommendation:
+- **The band always ships fewer rotten pieces**: from 1.6 times fewer at the
+  measured performance to 5 times fewer when the model is very unsure. A rotten piece in a pack also costs the
+  retailer's trust, which my €4 doesn't fully price.
+- **The band is not always cheaper.** Once the model is a lot less sure, the
+  tray fills with good fruit and the reviews cost more than they save.
+- **The review share works as an alarm.** It is 2% when the model behaves as
+  measured, and climbs past 7% when it gets much less sure. So the share of
+  fruit going to review is a free signal that the model is drifting.
+
+**My recommendation: run the model with the review band, and watch the
+review share.**
+- At about one grader-hour a day, it is the policy that ships the least rot
+  for close to the lowest cost.
+- If the review share climbs past about 7%, the model has drifted. That is
+  the moment to collect line images and retune, not to keep reviewing more.
+- Either model policy costs about **a fifteenth of today's process**, and
+  about 2% of shipping everything unchecked.
 
 ## Limitations & next steps
 
@@ -390,17 +434,16 @@ that is **59 minutes a day**, or **0.14** of one grader's 7 productive hours.
    - Before going live, I would photograph a day or two of real line output
      and label it with the graders' own decisions.
    - Then I would re-measure the miss rate. The whole cost case rests on it
-     staying below about 15%.
+     staying below about a quarter.
 2. **Few independent photos.** The test set is 234 photos, about 39 per class.
    Per-class recall carries about ±10 points of uncertainty, and every costly
    error so far comes from just 4 photos. More distinct photos per class would
    tighten that. I already bootstrap the costs by photo rather than by image,
    for exactly this reason.
-3. **The threshold is underdetermined.** The cost curve is flat from about 0.2
-   to 0.9, because the model makes too few mistakes on this data to pin the
-   minimum down. On real line images, where mistakes will be more common, I
-   would re-run the sweep and recalibrate the scores to the line's real rotten
-   share.
+3. **The threshold is underdetermined by the data.** The cost curve is flat
+   from about 0.2 to 0.9, so I used the theoretical cut as a tie-breaker. On
+   real line images, where mistakes will be more common, I would re-run the
+   sweep and recalibrate the scores to the line's real rotten share.
 4. **The published splits leaked.** I fixed this by re-splitting on the
    source photo, recovered from the filenames. A pixel-hash check found only 5
    test images (0.4%) that still look like a training image. Grouping by image
@@ -409,9 +452,18 @@ that is **59 minutes a day**, or **0.14** of one grader's 7 productive hours.
    on studio backgrounds, and leaves. I would add examples of each to
    training, and audit a sample of passed fruit every week to catch new
    failure modes early.
-6. **The euro figures and the 4% base rate are my assumptions.** I would
-   measure the real rotten share and the retailer's actual charge per claim,
-   then re-run the sweep; that is a one-line change in `config.py`.
+6. **My cost figures are anchored, not measured.**
+   - The fruit prices and the complaint charges come from public sources. The
+     complaint charges are UK figures used for a Spanish line.
+   - The 5% complaint chance, the grader accuracy figures, the 4% base rate
+     and the installation cost are my own assumptions.
+   - I would replace each with the packer's own numbers (rejection reports,
+     the real rotten share, the retailer's charge per claim) and re-run the
+     sweep. That is a one-line change per figure in `config.py`.
+7. **The stress test is a simplification.** Shrinking the scores towards 0.5
+   imitates a less confident model, but real drift could also be biased in
+   one direction, for example missing one specific kind of rot. Only real
+   line images can show which.
 
 ## Generative AI use disclosure
 
@@ -425,12 +477,13 @@ with my professor's permission for it to also draft the report text.
 - **Dataset.** It compared the candidate datasets through the Roboflow API and
   recommended the one I used. It also found the leakage between the published
   splits and wrote the re-split by source photo.
-- **Costs.** It proposed the cost figures, the base rate and the staffing
-  assumptions, which I reviewed and accepted as reasonable for a mid-size
-  packing line.
+- **Costs and sources.** It proposed the cost figures, the base rate and the
+  staffing assumptions, and found the public sources cited above. After a
+  practice grading, it revised the grader accuracy and wage down to the
+  sourced values and added today's process and a stress test as comparisons.
+  I reviewed and accepted these as reasonable for a mid-size packing line.
 - **Report.** It drafted the text of this report from the pipeline's outputs.
-  I reviewed it and asked for the final version to be written in plain
-  language.
+  I asked for it to be written in plain language, and reviewed it.
 - **My own decisions.** I chose the business problem (fruit grading, from the
   options it laid out). I approved the dataset, the cost assumptions, the
   thresholds the sweep selected, and the final recommendation. I take

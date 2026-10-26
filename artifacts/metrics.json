@@ -94,7 +94,8 @@
      0,
      183
     ]
-   ]
+   ],
+   "fruit_type_accuracy": 0.9943639291465378
   },
   "coco_zero_shot": {
    "accuracy": 0.4726247987117552,
@@ -190,7 +191,8 @@
      0,
      0
     ]
-   ]
+   ],
+   "fruit_type_accuracy": 0.782608695652174
   },
   "majority_class": {
    "accuracy": 0.2214170692431562,
@@ -286,7 +288,8 @@
      0,
      0
     ]
-   ]
+   ],
+   "fruit_type_accuracy": 0.37037037037037035
   }
  },
  "ultralytics_test": {
@@ -306,9 +309,9 @@
    "images": 1242,
    "rotten": 718,
    "rotten_share": 0.5780998389694042,
-   "roc_auc": 0.6469651704267579,
-   "recall_at_0.5": 0.3607242339832869,
-   "false_alarm_at_0.5": 0.06679389312977099
+   "roc_auc": 0.5,
+   "recall_at_0.5": 0.0,
+   "false_alarm_at_0.5": 0.0
   },
   "majority_class": {
    "images": 1242,

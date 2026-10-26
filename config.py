@@ -55,21 +55,31 @@ PATIENCE = 10
 SEED = 0
 
 # --- Costs, in euros per piece of fruit -----------------------------------
-# Outcome of the final decision. Justified in REPORT.md.
-COST_FN = 4.00   # rotten piece shipped: customer refund/complaint on the pack
-COST_FP = 0.30   # fresh piece discarded: its sale value, lost
+# Outcome of the final decision. Sources and arithmetic are in REPORT.md.
+COST_FN = 4.00   # rotten piece shipped: its 1 kg pack written off at wholesale
+                 # (~EUR 1.75) + a 5% chance of a ~EUR 50 retailer complaint charge
+COST_FP = 0.30   # fresh piece discarded: wholesale ~EUR 1.75/kg at ~6 pieces/kg
 COST_TP = 0.0    # rotten piece discarded: it was worth nothing before the
                  # camera saw it, so the decision itself costs nothing
 COST_TN = 0.0    # fresh piece shipped: the business as usual
 
 # --- Human review at the grading table ------------------------------------
 REVIEW_SECONDS = 3            # a grader picks up, turns and judges one piece
-REVIEWER_HOURLY_COST = 18.0   # fully loaded cost of a line worker
+REVIEWER_HOURLY_COST = 14.0   # minimum-wage-linked packing wage + ~31% employer
+                              # social security + small overhead
 COST_REVIEW = REVIEW_SECONDS / 3600 * REVIEWER_HOURLY_COST
-REVIEWER_SENSITIVITY = 0.97   # share of rotten pieces a grader catches
-REVIEWER_SPECIFICITY = 0.98   # share of fresh pieces a grader lets through
+REVIEWER_SENSITIVITY = 0.90   # careful inspectors catch ~85% of defects (Sandia);
+                              # one piece in the hand is an easier call
+REVIEWER_SPECIFICITY = 0.95   # share of fresh pieces a grader lets through
 REVIEWERS_AVAILABLE = 2       # graders who can stand at the review table
 PRODUCTIVE_HOURS_PER_REVIEWER = 7.0  # per shift, after breaks
+
+# --- Today's process (the status quo) -------------------------------------
+# Two graders stand at the conveyor and glance at every piece as it passes:
+# at 2 pieces/s each sees one piece per second, far less than a careful look.
+STATUS_QUO_GRADERS = 2
+STATUS_QUO_SENSITIVITY = 0.80  # industry-average visual inspection hit rate
+STATUS_QUO_SPECIFICITY = 0.97  # good pieces wrongly pulled off the belt
 
 # --- Operations -----------------------------------------------------------
 # One line, 2 pieces per second, one 8-hour shift.

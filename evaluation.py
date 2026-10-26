@@ -186,18 +186,34 @@ def optimise_band(y, s, base_rate, costs: Costs, grid, max_review_share: float =
     return best
 
 
-def policy_costs(y, s, base_rate, costs: Costs, single_t: float, lo: float, hi: float) -> dict:
-    """The four policies the brief asks to compare, in euros per piece."""
+def status_quo_from_config(config) -> dict:
+    """Today's process: graders glancing at every piece on the belt."""
+    labour = (config.STATUS_QUO_GRADERS * config.SHIFT_HOURS * config.REVIEWER_HOURLY_COST
+              / config.DAILY_VOLUME)
+    return {"labour_per_piece": labour, "sensitivity": config.STATUS_QUO_SENSITIVITY,
+            "specificity": config.STATUS_QUO_SPECIFICITY}
+
+
+def policy_costs(y, s, base_rate, costs: Costs, single_t: float, lo: float, hi: float,
+                 status_quo: dict | None = None) -> dict:
+    """The policies the brief asks to compare, plus today's process if given,
+    in euros per piece."""
     ship_all = {"pos": {"pass": 1.0, "review": 0.0, "fail": 0.0},
                 "neg": {"pass": 1.0, "review": 0.0, "fail": 0.0}}
     check_all = {"pos": {"pass": 0.0, "review": 1.0, "fail": 0.0},
                  "neg": {"pass": 0.0, "review": 1.0, "fail": 0.0}}
-    return {
+    out = {
         "do_nothing": cost_per_case(ship_all, base_rate, costs),
         "human_checks_all": cost_per_case(check_all, base_rate, costs),
         "model_alone": cost_per_case(band_rates(y, s, single_t, single_t), base_rate, costs),
         "model_plus_review": cost_per_case(band_rates(y, s, lo, hi), base_rate, costs),
     }
+    if status_quo:
+        sens, spec = status_quo["sensitivity"], status_quo["specificity"]
+        out["status_quo"] = (status_quo["labour_per_piece"]
+                             + base_rate * (sens * costs.tp + (1 - sens) * costs.fn)
+                             + (1 - base_rate) * ((1 - spec) * costs.fp + spec * costs.tn))
+    return out
 
 
 def staffing(share: float, daily_volume: int, review_seconds: float, productive_hours: float) -> dict:
