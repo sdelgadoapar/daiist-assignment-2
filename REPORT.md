@@ -470,7 +470,7 @@ review share.**
 
 I used Claude Code (Anthropic) as a coding assistant for this assignment. I worked through the problem with it step by step: I gave it instructions at each stage, and we discussed features, improvements and changes as the work went on.
 
-**Code**. Claude Code wrote the code from my step-by-step instructions: the training pipeline (train.py), the shared metrics and cost logic (evaluation.py), the settings file (config.py) and the Gradio dashboard (app.py). I set the goal for each piece and reviewed what it produced. Then I asked for changes, such as adding features, fixing problems I noticed in the results, and changing how parts of the pipeline worked. Most components went through several rounds of this before I was satisfied.
+**Code:** Claude Code wrote the code from my step-by-step instructions: the training pipeline (train.py), the shared metrics and cost logic (evaluation.py), the settings file (config.py) and the Gradio dashboard (app.py). I set the goal for each piece and reviewed what it produced. Then I asked for changes, such as adding features, fixing problems I noticed in the results, and changing how parts of the pipeline worked. Most components went through several rounds of this before I was satisfied.
 
 **Discussion and iteration:** I used Claude Code to talk through design choices before implementing them. Examples include which metrics to track, how to structure the cost logic, and what the dashboard should show. It suggested options and pointed out trade-offs, and I made the final call on each.
 
@@ -479,4 +479,4 @@ Business problem. I framed the business problem (fruit grading) and defined what
 
 **Analysis and report:** I did the analysis and wrote all of the report text myself, including the cost assumptions, the interpretation of results and the final recommendation. Claude Code did not draft any of the written sections.
 
-**Responsibility:** I directed every stage of the project and approved every change to the code. I take responsibility for every number and decision here, and I can explain each one without the code in front of me.
+**Responsibility:** I directed every stage of the project and approved every change to the code. 
