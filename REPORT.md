@@ -16,7 +16,7 @@ anything that looks bad as the fruit rolls past. At 2 pieces a second, each
 of them sees roughly one piece per second: a glance, not an inspection. Human
 visual inspection catches about 80% of defects on average; even careful,
 trained inspectors in a Sandia study only reached 85%
-([See et al., Sandia/OSTI](https://www.osti.gov/biblio/1236203)). So I assume
+([J. See, Sandia National Laboratories](https://www.osti.gov/biblio/1236203)). So I assume
 today's graders catch **80%** of rotten pieces and wrongly pull off 3% of good
 ones.
 
@@ -38,7 +38,7 @@ problem interesting:
 
 | outcome | cost per piece | where the number comes from |
 |---|---|---|
-| Rotten piece shipped (false negative) | **€4.00** | The rot is found in a supermarket pack and the packer pays twice. First, the 1 kg pack is written off: about €1.75 at Spanish wholesale prices ([Tridge](https://www.tridge.com/market-overview/fresh-apple/ES); it retails at about €2.76/kg, [Expatistan](https://expatistan.com/price/apples/madrid)). Second, some shoppers complain, and UK supermarkets charge suppliers £45–55 per consumer complaint ([Fruitnet, on the Groceries Code Adjudicator](https://www.fruitnet.com/fpj/article/165630/tacon-to-close-one-of-her-top-five-retail-supplier-issues)). With a 5% chance of a complaint at about €50, that adds €2.50. €1.75 + €2.50 ≈ €4.25, which I round to €4. |
+| Rotten piece shipped (false negative) | **€4.00** | The rot is found in a supermarket pack and the packer pays twice. First, the 1 kg pack is written off: about €1.75 at Spanish wholesale prices ([Tridge](https://www.tridge.com/market-overview/fresh-apple/ES); it retails at about €2.76/kg, [Expatistan](https://expatistan.com/price/apples/madrid)). Second, some shoppers complain, and UK supermarkets charge suppliers up to £45–55 per consumer complaint ([Fruitnet, on the Groceries Code Adjudicator](https://www.fruitnet.com/fpj/article/165630/tacon-to-close-one-of-her-top-five-retail-supplier-issues)). With a 5% chance of a complaint at about €50, that adds €2.50. €1.75 + €2.50 ≈ €4.25, which I round to €4. |
 | Fresh piece binned (false positive) | **€0.30** | We threw away a piece we could have sold: about €1.75 per kg wholesale at roughly six pieces per kg. Cheaper varieties trade at €0.70–1.00/kg ([Wikifarmer](https://wikifarmer.com/library/en/article/fresh-market-digest-week-50)), so €0.30 is at the high end. That is deliberate: it makes false alarms look more expensive, which works against the model, not for it. |
 | Rotten piece binned (true positive) | €0 | It was worth nothing before the camera saw it. Binning it is the right, free outcome. |
 | Fresh piece shipped (true negative) | €0 | Business as usual. |
@@ -74,7 +74,8 @@ Each image shows one piece (occasionally a bunch) of fruit, labelled with one
 of six classes: `freshapples`, `freshbanana`, `freshoranges`, `rottenapples`,
 `rottenbanana`, `rottenoranges`. Version 3 has no Roboflow resizing or
 augmentation, so the images are the originals at their own sizes: 1,451
-different sizes, mostly 350–560 px wide.
+different sizes, with a median width of about 400 px and most between 250
+and 600 px.
 
 **Why this dataset.** It labels exactly the call a grader makes, fresh or
 rotten, for three fruits a real line would handle. Because it keeps the fruit
@@ -297,7 +298,7 @@ the cost of a missed rotten piece and watch it change. The sweep data is in
 one.**
 - **The shape.** Every threshold between about 0.16 and 0.95 costs between €2
   and €8 per 1,000 pieces on test. Below 0.05 the model bins most of the
-  fresh fruit; at 1.0 a quarter of the rotten fruit ships.
+  fresh fruit; at 1.0 almost a quarter of the rotten fruit ships.
 - **Why it's flat.** The model makes so few mistakes on this data that one or
   two photos decide exactly where the minimum falls. That is why validation
   says 0.70 and test would say 0.95. The data alone cannot pin the threshold
@@ -358,9 +359,9 @@ The capacity limit never came into play: the search without it picks the same
 band.
 
 On the test split, re-weighted to 4% rotten:
-- **2.0% of pieces go to the grading table.** They are mostly fresh oranges
-  and fresh apples the model is unsure about, plus a handful of rotten
-  oranges.
+- **2.0% of pieces go to the grading table.** On test, that was 8 fresh
+  oranges and 3 fresh apples the model was unsure about, plus 3 rotten
+  oranges and 1 rotten banana.
 - 0.8% of rotten pieces still ship (some slip past the model, a few past the
   grader), and 0.5% of fresh pieces are binned.
 
